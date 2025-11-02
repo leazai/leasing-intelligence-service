@@ -146,30 +146,41 @@ class ShowMojoClient:
         
         print(f"Parsing ShowMojo data...")
         
-        # ShowMojo returns data in different formats depending on the report
-        # Handle both list and dict responses
+        # ShowMojo returns data in this format:
+        # {"response": {"status": "success", "data": [...]}}
+        
         if isinstance(data, list):
             showing_list = data
             print(f"Data is a list with {len(showing_list)} items")
         elif isinstance(data, dict):
-            # Try common keys
-            showing_list = (
-                data.get("data") or 
-                data.get("showings") or 
-                data.get("results") or 
-                data.get("rows") or
-                data.get("report_data") or
-                []
-            )
-            print(f"Data is a dict, extracted list with {len(showing_list)} items using key search")
-            
-            # If still empty, try to find any list in the dict
-            if not showing_list:
-                for key, value in data.items():
-                    if isinstance(value, list) and len(value) > 0:
-                        showing_list = value
-                        print(f"Found list in key '{key}' with {len(showing_list)} items")
-                        break
+            # ShowMojo wraps data in a 'response' object
+            if 'response' in data:
+                response_obj = data['response']
+                if isinstance(response_obj, dict) and 'data' in response_obj:
+                    showing_list = response_obj['data']
+                    print(f"Extracted {len(showing_list)} items from response.data")
+                else:
+                    showing_list = []
+                    print(f"'response' exists but no 'data' key found")
+            else:
+                # Try common keys at top level
+                showing_list = (
+                    data.get("data") or 
+                    data.get("showings") or 
+                    data.get("results") or 
+                    data.get("rows") or
+                    data.get("report_data") or
+                    []
+                )
+                print(f"No 'response' key, extracted {len(showing_list)} items using key search")
+                
+                # If still empty, try to find any list in the dict
+                if not showing_list:
+                    for key, value in data.items():
+                        if isinstance(value, list) and len(value) > 0:
+                            showing_list = value
+                            print(f"Found list in key '{key}' with {len(showing_list)} items")
+                            break
         else:
             showing_list = []
             print(f"Data is neither list nor dict: {type(data)}")
