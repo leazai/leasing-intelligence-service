@@ -3,9 +3,9 @@ ShowMojo API Client
 Fetches showing data from ShowMojo using the Report Export API
 """
 import requests
+from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
-import time
 
 
 class ShowMojoClient:
@@ -22,39 +22,6 @@ class ShowMojoClient:
         self.email = email
         self.password = password
         self.base_url = "https://showmojo.com/api/v3"
-        self.session = requests.Session()
-        self.auth_token = None
-    
-    def _authenticate(self) -> bool:
-        """
-        Authenticate with ShowMojo API
-        
-        Returns:
-            bool: True if authentication successful
-        """
-        try:
-            # ShowMojo uses basic auth with email/password
-            auth_url = f"{self.base_url}/auth/login"
-            response = self.session.post(
-                auth_url,
-                json={
-                    "email": self.email,
-                    "password": self.password
-                },
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                self.auth_token = data.get("token")
-                return True
-            else:
-                print(f"ShowMojo authentication failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"Error authenticating with ShowMojo: {e}")
-            return False
     
     def get_showings(self, days_back: int = 30, property_id: Optional[str] = None) -> Dict:
         """
@@ -68,15 +35,6 @@ class ShowMojoClient:
             Dict with success status and showing data
         """
         try:
-            # Authenticate if not already authenticated
-            if not self.auth_token:
-                if not self._authenticate():
-                    return {
-                        "success": False,
-                        "error": "Authentication failed",
-                        "showings": []
-                    }
-            
             # Calculate date range
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days_back)
@@ -87,31 +45,26 @@ class ShowMojoClient:
             
             # Build API request
             report_url = f"{self.base_url}/reports/prospect_showing_data"
-            params = {
-                "start_date": start_date_str,
-                "end_date": end_date_str
-            }
-            
-            if property_id:
-                params["property_id"] = property_id
-            
-            headers = {
-                "Authorization": f"Bearer {self.auth_token}",
-                "Content-Type": "application/json"
-            }
             
             print(f"Fetching ShowMojo data from {start_date_str} to {end_date_str}...")
             
-            response = self.session.get(
+            # ShowMojo uses HTTP Basic Auth directly - no separate login needed!
+            response = requests.post(
                 report_url,
-                params=params,
-                headers=headers,
+                auth=HTTPBasicAuth(self.email, self.password),
+                data={
+                    "start_date": start_date_str,
+                    "end_date": end_date_str
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=60
             )
             
             if response.status_code == 200:
                 data = response.json()
                 showings = self._parse_showings(data)
+                
+                print(f"Successfully retrieved {len(showings)} showings from ShowMojo")
                 
                 return {
                     "success": True,
@@ -122,19 +75,15 @@ class ShowMojoClient:
                 }
             
             elif response.status_code == 401:
-                # Token expired, re-authenticate and retry
-                print("Token expired, re-authenticating...")
-                self.auth_token = None
-                if self._authenticate():
-                    return self.get_showings(days_back, property_id)
-                else:
-                    return {
-                        "success": False,
-                        "error": "Re-authentication failed",
-                        "showings": []
-                    }
+                print(f"ShowMojo authentication failed: Invalid credentials")
+                return {
+                    "success": False,
+                    "error": "Authentication failed - check email/password",
+                    "showings": []
+                }
             
             else:
+                print(f"ShowMojo API error: {response.status_code} - {response.text}")
                 return {
                     "success": False,
                     "error": f"API request failed: {response.status_code}",
@@ -149,26 +98,25 @@ class ShowMojoClient:
                 "showings": []
             }
     
-    def _parse_showings(self, raw_data: Dict) -> List[Dict]:
+    def _parse_showings(self, data: Dict) -> List[Dict]:
         """
-        Parse raw ShowMojo API response into structured showing data
+        Parse showing data from API response
         
         Args:
-            raw_data: Raw API response data
+            data: Raw API response data
         
         Returns:
-            List of parsed showing records
+            List of parsed showing dictionaries
         """
         showings = []
         
-        # ShowMojo returns data in various formats depending on the report
-        # This is a generic parser that handles common fields
-        
-        if isinstance(raw_data, dict):
-            # If data has a 'showings' or 'data' key
-            showing_list = raw_data.get("showings") or raw_data.get("data") or raw_data.get("results") or []
-        elif isinstance(raw_data, list):
-            showing_list = raw_data
+        # ShowMojo returns data in different formats depending on the report
+        # Handle both list and dict responses
+        if isinstance(data, list):
+            showing_list = data
+        elif isinstance(data, dict):
+            # Try common keys
+            showing_list = data.get("data") or data.get("showings") or data.get("results") or []
         else:
             showing_list = []
         
@@ -203,11 +151,14 @@ class ShowMojoClient:
             bool: True if connection successful
         """
         try:
-            if self._authenticate():
+            # Try to fetch last 1 day of data as a test
+            result = self.get_showings(days_back=1)
+            
+            if result.get("success"):
                 print("✅ ShowMojo connection successful")
                 return True
             else:
-                print("❌ ShowMojo connection failed")
+                print(f"❌ ShowMojo connection failed: {result.get('error')}")
                 return False
         except Exception as e:
             print(f"❌ ShowMojo connection error: {e}")
@@ -232,14 +183,14 @@ if __name__ == "__main__":
             # Fetch last 7 days of showings
             result = client.get_showings(days_back=7)
             
-            if result["success"]:
+            if result.get("success"):
                 print(f"\n✅ Retrieved {len(result['showings'])} showings")
-                print(f"Date range: {result['start_date']} to {result['end_date']}")
                 
-                if result["showings"]:
-                    print("\nFirst showing:")
-                    print(result["showings"][0])
+                # Print first showing as example
+                if result['showings']:
+                    print("\nExample showing:")
+                    print(result['showings'][0])
             else:
-                print(f"\n❌ Failed to fetch showings: {result['error']}")
+                print(f"\n❌ Failed to get showings: {result.get('error')}")
     else:
         print("❌ SHOWMOJO_EMAIL and SHOWMOJO_PASSWORD environment variables not set")
