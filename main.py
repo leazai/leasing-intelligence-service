@@ -14,6 +14,7 @@ import httpx
 from rentcast_client import RentCastClient
 from syndication_checker import SyndicationChecker
 from openai_analyzer import OpenAIAnalyzer
+from showmojo_client import ShowMojoClient
 
 # Load environment variables
 load_dotenv()
@@ -38,10 +39,15 @@ app.add_middleware(
 rentcast_client = RentCastClient(api_key=os.getenv("RENTCAST_API_KEY"))
 syndication_checker = SyndicationChecker()
 openai_analyzer = OpenAIAnalyzer(api_key=os.getenv("OPENAI_API_KEY"))
+showmojo_client = ShowMojoClient(
+    email=os.getenv("SHOWMOJO_EMAIL"),
+    password=os.getenv("SHOWMOJO_PASSWORD")
+)
 
 # Lovable webhook URLs
 LOVABLE_MARKET_WEBHOOK = os.getenv("LOVABLE_MARKET_DATA_WEBHOOK")
 LOVABLE_SYNDICATION_WEBHOOK = os.getenv("LOVABLE_SYNDICATION_WEBHOOK")
+LOVABLE_SHOWINGS_WEBHOOK = os.getenv("LOVABLE_SHOWINGS_WEBHOOK", LOVABLE_MARKET_WEBHOOK)  # Fallback to market webhook
 LOVABLE_AUTH_TOKEN = os.getenv("LOVABLE_AUTH_TOKEN")
 
 
@@ -73,6 +79,11 @@ class SyndicationCheckRequest(BaseModel):
     square_footage: int
     amenities: List[str]
     photos_count: int
+
+
+class ShowingsRequest(BaseModel):
+    days_back: int = 30
+    property_id: Optional[str] = None
 
 
 # Endpoints
@@ -126,6 +137,29 @@ async def check_syndication(request: SyndicationCheckRequest, background_tasks: 
             "status": "processing",
             "message": "Syndication check started",
             "listing_id": request.listing_id
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync-showings")
+async def sync_showings(request: ShowingsRequest, background_tasks: BackgroundTasks):
+    """
+    Sync showing data from ShowMojo
+    Fetches showing data and sends to Lovable webhook
+    """
+    try:
+        # Start sync in background
+        background_tasks.add_task(
+            _process_showings_sync,
+            request
+        )
+        
+        return {
+            "status": "processing",
+            "message": "Showing data sync started",
+            "days_back": request.days_back
         }
     
     except Exception as e:
@@ -282,6 +316,53 @@ async def _process_syndication_check(request: SyndicationCheckRequest):
     
     except Exception as e:
         print(f"Error in syndication check: {e}")
+
+
+async def _process_showings_sync(request: ShowingsRequest):
+    """Process ShowMojo showing data sync and send to Lovable"""
+    try:
+        print(f"Starting ShowMojo sync for last {request.days_back} days...")
+        
+        # Fetch showing data from ShowMojo
+        showings_data = showmojo_client.get_showings(
+            days_back=request.days_back,
+            property_id=request.property_id
+        )
+        
+        if not showings_data.get("success"):
+            print(f"ShowMojo sync failed: {showings_data.get('error')}")
+            return
+        
+        showings = showings_data.get("showings", [])
+        print(f"Retrieved {len(showings)} showings from ShowMojo")
+        
+        # Build payload for Lovable
+        payload = {
+            "sync_timestamp": showings_data.get("sync_timestamp"),
+            "days_back": request.days_back,
+            "total_showings": len(showings),
+            "showings": showings
+        }
+        
+        # Send to Lovable webhook
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                LOVABLE_SHOWINGS_WEBHOOK,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {LOVABLE_AUTH_TOKEN}"
+                },
+                timeout=60.0
+            )
+            
+            if response.status_code == 200:
+                print(f"Showing data sent to Lovable successfully: {len(showings)} showings")
+            else:
+                print(f"Failed to send to Lovable: {response.status_code} - {response.text}")
+    
+    except Exception as e:
+        print(f"Error in ShowMojo sync: {e}")
 
 
 if __name__ == "__main__":
