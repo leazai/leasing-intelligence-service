@@ -1,11 +1,12 @@
 """
-ShowMojo API Client
+ShowMojo API Client with Debug Logging
 Fetches showing data from ShowMojo using the Report Export API
 """
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
+import json
 
 
 class ShowMojoClient:
@@ -47,6 +48,7 @@ class ShowMojoClient:
             report_url = f"{self.base_url}/reports/prospect_showing_data"
             
             print(f"Fetching ShowMojo data from {start_date_str} to {end_date_str}...")
+            print(f"API URL: {report_url}")
             
             # ShowMojo uses HTTP Basic Auth directly - no separate login needed!
             response = requests.post(
@@ -60,8 +62,37 @@ class ShowMojoClient:
                 timeout=60
             )
             
+            print(f"ShowMojo API Response Status: {response.status_code}")
+            
             if response.status_code == 200:
-                data = response.json()
+                # DEBUG: Print raw response
+                raw_response = response.text
+                print(f"ShowMojo Raw Response (first 500 chars): {raw_response[:500]}")
+                
+                try:
+                    data = response.json()
+                    print(f"ShowMojo Response Type: {type(data)}")
+                    
+                    # DEBUG: Print response structure
+                    if isinstance(data, dict):
+                        print(f"ShowMojo Response Keys: {list(data.keys())}")
+                    elif isinstance(data, list):
+                        print(f"ShowMojo Response is a list with {len(data)} items")
+                        if len(data) > 0:
+                            print(f"First item keys: {list(data[0].keys()) if isinstance(data[0], dict) else 'Not a dict'}")
+                    
+                    # DEBUG: Print full response (be careful with large responses)
+                    print(f"ShowMojo Full Response: {json.dumps(data, indent=2)[:1000]}")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"ShowMojo Response is not JSON: {e}")
+                    print(f"Raw response: {raw_response}")
+                    return {
+                        "success": False,
+                        "error": "Invalid JSON response from ShowMojo",
+                        "showings": []
+                    }
+                
                 showings = self._parse_showings(data)
                 
                 print(f"Successfully retrieved {len(showings)} showings from ShowMojo")
@@ -83,7 +114,8 @@ class ShowMojoClient:
                 }
             
             else:
-                print(f"ShowMojo API error: {response.status_code} - {response.text}")
+                print(f"ShowMojo API error: {response.status_code}")
+                print(f"Response text: {response.text[:500]}")
                 return {
                     "success": False,
                     "error": f"API request failed: {response.status_code}",
@@ -92,6 +124,8 @@ class ShowMojoClient:
         
         except Exception as e:
             print(f"Error fetching ShowMojo data: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
                 "error": str(e),
@@ -110,37 +144,68 @@ class ShowMojoClient:
         """
         showings = []
         
+        print(f"Parsing ShowMojo data...")
+        
         # ShowMojo returns data in different formats depending on the report
         # Handle both list and dict responses
         if isinstance(data, list):
             showing_list = data
+            print(f"Data is a list with {len(showing_list)} items")
         elif isinstance(data, dict):
             # Try common keys
-            showing_list = data.get("data") or data.get("showings") or data.get("results") or []
+            showing_list = (
+                data.get("data") or 
+                data.get("showings") or 
+                data.get("results") or 
+                data.get("rows") or
+                data.get("report_data") or
+                []
+            )
+            print(f"Data is a dict, extracted list with {len(showing_list)} items using key search")
+            
+            # If still empty, try to find any list in the dict
+            if not showing_list:
+                for key, value in data.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        showing_list = value
+                        print(f"Found list in key '{key}' with {len(showing_list)} items")
+                        break
         else:
             showing_list = []
+            print(f"Data is neither list nor dict: {type(data)}")
         
-        for item in showing_list:
+        print(f"Processing {len(showing_list)} items...")
+        
+        for idx, item in enumerate(showing_list):
+            if not isinstance(item, dict):
+                print(f"Item {idx} is not a dict: {type(item)}")
+                continue
+                
+            # DEBUG: Print first item structure
+            if idx == 0:
+                print(f"First item structure: {json.dumps(item, indent=2)[:500]}")
+            
             showing = {
-                "showing_id": item.get("id") or item.get("showing_id"),
-                "property_id": item.get("property_id"),
-                "property_address": item.get("property_address") or item.get("address"),
-                "prospect_name": item.get("prospect_name") or item.get("name"),
-                "prospect_email": item.get("prospect_email") or item.get("email"),
-                "prospect_phone": item.get("prospect_phone") or item.get("phone"),
-                "showing_date": item.get("showing_date") or item.get("date"),
-                "showing_time": item.get("showing_time") or item.get("time"),
-                "status": item.get("status"),
+                "showing_id": item.get("id") or item.get("showing_id") or f"showing_{idx}",
+                "property_id": item.get("property_id") or item.get("listing_id"),
+                "property_address": item.get("property_address") or item.get("address") or item.get("listing_address"),
+                "prospect_name": item.get("prospect_name") or item.get("name") or item.get("contact_name"),
+                "prospect_email": item.get("prospect_email") or item.get("email") or item.get("contact_email"),
+                "prospect_phone": item.get("prospect_phone") or item.get("phone") or item.get("contact_phone"),
+                "showing_date": item.get("showing_date") or item.get("date") or item.get("scheduled_date"),
+                "showing_time": item.get("showing_time") or item.get("time") or item.get("scheduled_time"),
+                "status": item.get("status") or "unknown",
                 "confirmed": item.get("confirmed", False),
                 "attended": item.get("attended"),
                 "cancelled": item.get("cancelled", False),
-                "notes": item.get("notes"),
-                "created_at": item.get("created_at"),
-                "updated_at": item.get("updated_at")
+                "notes": item.get("notes") or item.get("comments"),
+                "created_at": item.get("created_at") or item.get("created"),
+                "updated_at": item.get("updated_at") or item.get("updated")
             }
             
             showings.append(showing)
         
+        print(f"Parsed {len(showings)} showings")
         return showings
     
     def test_connection(self) -> bool:
@@ -189,7 +254,7 @@ if __name__ == "__main__":
                 # Print first showing as example
                 if result['showings']:
                     print("\nExample showing:")
-                    print(result['showings'][0])
+                    print(json.dumps(result['showings'][0], indent=2))
             else:
                 print(f"\n❌ Failed to get showings: {result.get('error')}")
     else:
