@@ -196,7 +196,7 @@ class ShowMojoClient:
             if idx == 0:
                 print(f"First item structure: {json.dumps(item, indent=2)[:500]}")
             
-                        showing = {
+            showing = {
                 "showing_id": item.get("id") or item.get("showing_id") or f"showing_{idx}",
                 "property_id": item.get("listing_uid") or item.get("property_id") or item.get("listing_id"),
                 "property_address": item.get("showing_address_and_unit") or item.get("property_address") or item.get("address"),
