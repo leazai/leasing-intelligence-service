@@ -196,6 +196,25 @@ class ShowMojoClient:
             if idx == 0:
                 print(f"First item structure: {json.dumps(item, indent=2)[:500]}")
             
+            # Parse showtime into separate date and time
+            # Format: "5 Oct 2025, 8:00PM CDT" or "11 Oct 2025, 3:30PM CDT"
+            showtime_raw = item.get("showtime")
+            showing_date = None
+            showing_time = None
+            showing_datetime = None
+            
+            if showtime_raw:
+                try:
+                    # Split by comma: ["5 Oct 2025", " 8:00PM CDT"]
+                    parts = showtime_raw.split(",")
+                    if len(parts) >= 2:
+                        showing_date = parts[0].strip()  # "5 Oct 2025"
+                        showing_time = parts[1].strip()  # "8:00PM CDT"
+                        showing_datetime = showtime_raw  # Keep full string for reference
+                except Exception as e:
+                    print(f"Warning: Could not parse showtime '{showtime_raw}': {e}")
+                    showing_datetime = showtime_raw
+            
             showing = {
                 "showing_id": item.get("id") or item.get("showing_id") or f"showing_{idx}",
                 "property_id": item.get("listing_uid") or item.get("property_id") or item.get("listing_id"),
@@ -203,12 +222,14 @@ class ShowMojoClient:
                 "prospect_name": item.get("name") or item.get("prospect_name") or item.get("contact_name"),
                 "prospect_email": item.get("email") or item.get("prospect_email") or item.get("contact_email"),
                 "prospect_phone": item.get("phone") or item.get("prospect_phone") or item.get("contact_phone"),
-                "showing_date": item.get("showtime") or item.get("showing_date") or item.get("date") or item.get("scheduled_date"),
-                "showing_time": item.get("showtime") or item.get("showing_time") or item.get("time") or item.get("scheduled_time"),
+                "showing_date": showing_date,
+                "showing_time": showing_time,
+                "showing_datetime": showing_datetime,
                 "status": item.get("status") or "unknown",
                 "confirmed": item.get("confirmed", False),
                 "attended": item.get("attended"),
                 "cancelled": item.get("cancelled", False),
+                "no_show": item.get("no_show", False),
                 "notes": item.get("notes") or item.get("comments"),
                 "created_at": item.get("created_at") or item.get("created"),
                 "updated_at": item.get("updated_at") or item.get("updated")
