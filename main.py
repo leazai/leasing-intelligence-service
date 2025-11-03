@@ -10,6 +10,7 @@ import os
 from dotenv import load_dotenv
 import requests
 import httpx
+import json
 
 from rentcast_client import RentCastClient
 from syndication_checker import SyndicationChecker
@@ -321,7 +322,7 @@ async def _process_syndication_check(request: SyndicationCheckRequest):
 async def _process_showings_sync(request: ShowingsRequest):
     """Process ShowMojo showing data sync and send to Lovable"""
     try:
-        print(f"Starting ShowMojo sync for last {request.days_back} days...")
+        print(f"🔄 Starting ShowMojo sync for last {request.days_back} days...")
         
         # Fetch showing data from ShowMojo
         showings_data = showmojo_client.get_showings(
@@ -330,11 +331,16 @@ async def _process_showings_sync(request: ShowingsRequest):
         )
         
         if not showings_data.get("success"):
-            print(f"ShowMojo sync failed: {showings_data.get('error')}")
+            print(f"❌ ShowMojo sync failed: {showings_data.get('error')}")
             return
         
         showings = showings_data.get("showings", [])
-        print(f"Retrieved {len(showings)} showings from ShowMojo")
+        print(f"✅ Retrieved {len(showings)} showings from ShowMojo")
+        
+        # DEBUG: Print first showing to verify data structure
+        if showings:
+            print(f"🔍 DEBUG - First showing data:")
+            print(json.dumps(showings[0], indent=2))
         
         # Build payload for Lovable
         payload = {
@@ -344,7 +350,15 @@ async def _process_showings_sync(request: ShowingsRequest):
             "showings": showings
         }
         
+        # DEBUG: Print webhook URL and payload summary
+        print(f"🔍 DEBUG - Webhook URL: {LOVABLE_SHOWINGS_WEBHOOK}")
+        print(f"🔍 DEBUG - Payload summary: {len(showings)} showings, timestamp: {payload['sync_timestamp']}")
+        if len(showings) > 0:
+            print(f"🔍 DEBUG - First 3 showings:")
+            print(json.dumps(showings[:3], indent=2))
+        
         # Send to Lovable webhook
+        print("📤 Sending to webhook...")
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 LOVABLE_SHOWINGS_WEBHOOK,
@@ -356,13 +370,18 @@ async def _process_showings_sync(request: ShowingsRequest):
                 timeout=60.0
             )
             
+            print(f"📥 Webhook response status: {response.status_code}")
+            print(f"📥 Webhook response body: {response.text[:500]}")
+            
             if response.status_code == 200:
-                print(f"Showing data sent to Lovable successfully: {len(showings)} showings")
+                print(f"✅ Showing data sent to Lovable successfully: {len(showings)} showings")
             else:
-                print(f"Failed to send to Lovable: {response.status_code} - {response.text}")
+                print(f"❌ Failed to send to Lovable: {response.status_code} - {response.text}")
     
     except Exception as e:
-        print(f"Error in ShowMojo sync: {e}")
+        print(f"❌ Error in ShowMojo sync: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
 
 
 if __name__ == "__main__":
