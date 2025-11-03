@@ -196,15 +196,15 @@ class ShowMojoClient:
             if idx == 0:
                 print(f"First item structure: {json.dumps(item, indent=2)[:500]}")
             
-            showing = {
+                        showing = {
                 "showing_id": item.get("id") or item.get("showing_id") or f"showing_{idx}",
-                "property_id": item.get("property_id") or item.get("listing_id"),
-                "property_address": item.get("property_address") or item.get("address") or item.get("listing_address"),
-                "prospect_name": item.get("prospect_name") or item.get("name") or item.get("contact_name"),
-                "prospect_email": item.get("prospect_email") or item.get("email") or item.get("contact_email"),
-                "prospect_phone": item.get("prospect_phone") or item.get("phone") or item.get("contact_phone"),
-                "showing_date": item.get("showing_date") or item.get("date") or item.get("scheduled_date"),
-                "showing_time": item.get("showing_time") or item.get("time") or item.get("scheduled_time"),
+                "property_id": item.get("listing_uid") or item.get("property_id") or item.get("listing_id"),
+                "property_address": item.get("showing_address_and_unit") or item.get("property_address") or item.get("address"),
+                "prospect_name": item.get("name") or item.get("prospect_name") or item.get("contact_name"),
+                "prospect_email": item.get("email") or item.get("prospect_email") or item.get("contact_email"),
+                "prospect_phone": item.get("phone") or item.get("prospect_phone") or item.get("contact_phone"),
+                "showing_date": item.get("showtime") or item.get("showing_date") or item.get("date") or item.get("scheduled_date"),
+                "showing_time": item.get("showtime") or item.get("showing_time") or item.get("time") or item.get("scheduled_time"),
                 "status": item.get("status") or "unknown",
                 "confirmed": item.get("confirmed", False),
                 "attended": item.get("attended"),
