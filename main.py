@@ -1,3 +1,11 @@
+# ============================================================================
+# FILE: main.py
+# VERSION: 2.0 - WITH EMOJI DEBUG LOGGING
+# LAST UPDATED: 2025-11-03
+# ============================================================================
+# START OF FILE - DO NOT DELETE THIS LINE
+# ============================================================================
+
 """
 Leasing Intelligence Service
 FastAPI web service for market analysis and syndication checking
@@ -388,3 +396,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+# ============================================================================
+# END OF FILE - IF YOU SEE THIS LINE, THE FILE IS COMPLETE
+# ============================================================================
